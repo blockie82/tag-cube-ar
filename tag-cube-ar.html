@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tag Cube AR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: camera stage on a cutting-mat ground, a control rail on the right that stacks below on phones */
+:root{
+  --bg:#13221c;          /* cutting mat, deep green */
+  --mat-line:#21392f;    /* printed grid on the mat */
+  --panel:#1a2d25;
+  --panel-2:#22392f;
+  --fg:#e8efe7;
+  --muted:#9fb5a8;
+  --accent:#f2c94c;      /* ruler yellow */
+  --accent-ink:#1d1a0c;
+  --ok:#7fe0a8;
+  --warn:#ff8f75;
+  --hair:rgba(232,239,231,.12);
+  --font-display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --font-body:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--font-body);
+  background-image:
+    linear-gradient(var(--mat-line) 1px,transparent 1px),
+    linear-gradient(90deg,var(--mat-line) 1px,transparent 1px);
+  background-size:40px 40px;background-position:-1px -1px;
+}
+[hidden]{display:none!important}
+/* desktop: one screen, no page scroll; the stage takes whatever height is left */
+.app{
+  display:grid;grid-template-columns:minmax(0,1fr) 320px;grid-template-rows:auto minmax(0,1fr);gap:12px 18px;
+  height:100%;overflow:hidden;
+  padding-block:12px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+header.top{grid-column:1/-1;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+h1{
+  font-family:var(--font-display);font-stretch:125%;font-weight:800;
+  font-size:clamp(20px,2.4vw,26px);letter-spacing:-.01em;margin:0;line-height:1.1;text-wrap:balance
+}
+h1 span{color:var(--accent)}
+.sub{color:var(--muted);font-size:13.5px;margin:0}
+
+/* ---------- stage ---------- */
+.stage-wrap{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+.stage-box{flex:1;min-height:0;container-type:size;display:flex;align-items:flex-end;justify-content:center}
+.stage{
+  --ar:16/9;
+  position:relative;aspect-ratio:var(--ar);width:min(100cqw, calc(100cqh * var(--ar)));max-width:100%;
+  background:#0c1612;border:1px solid var(--hair);border-radius:6px;overflow:hidden;
+}
+.stage .layer{position:absolute;inset:0;width:100%;height:100%}
+.stage video{object-fit:fill;background:#000}
+.stage.mirror .flip{transform:scaleX(-1)}
+.stage.drag{outline:2px dashed var(--accent);outline-offset:-8px}
+.hud{
+  position:absolute;left:12px;top:12px;right:12px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none;
+  font:600 12px/1 var(--font-mono);
+}
+.pill{background:rgba(10,20,16,.78);border:1px solid var(--hair);padding:6px 9px;border-radius:999px;display:inline-flex;gap:6px;align-items:center;color:var(--fg)}
+.pill.errpill{color:var(--warn);font-family:var(--font-body);font-weight:500;border-radius:6px;line-height:1.3}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.live .dot{background:var(--ok);box-shadow:0 0 0 3px rgba(127,224,168,.2)}
+.pill.lost .dot{background:var(--warn)}
+.empty{
+  position:absolute;right:14px;bottom:14px;max-width:320px;
+  background:rgba(10,20,16,.84);border:1px solid var(--hair);border-radius:6px;padding:12px 14px;font-size:13px
+}
+.empty b{color:var(--accent);font-weight:600}
+.empty ol{margin:6px 0 0;padding-left:18px;display:grid;gap:3px}
+.preview-tag{position:absolute;left:12px;bottom:12px;font:600 11px/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+
+/* ---------- bar under the stage: face chips + print the cube ---------- */
+.bar{display:flex;gap:10px 18px;align-items:center;flex-wrap:wrap}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{
+  font:600 12px/1 var(--font-mono);padding:7px 9px;border-radius:4px;border:1px solid var(--hair);
+  color:var(--muted);background:var(--panel);display:inline-flex;gap:6px;align-items:baseline;transition:background .15s,color .15s
+}
+.chip small{font:500 10px/1 var(--font-body);letter-spacing:.06em;text-transform:uppercase}
+.chip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.print{
+  margin-left:auto;display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap;
+  background:var(--panel);border:1px solid var(--hair);border-radius:6px;padding:6px 6px 6px 12px
+}
+.print .ptitle{font:700 11px/1 var(--font-display);font-stretch:110%;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.print .seg{width:150px}
+.print .seg label{padding:6px 8px;font-size:13px}
+.edgebox{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.edgebox input[type=number]{width:62px;padding:6px 7px}
+@media (max-width:1400px){.print .ptitle{display:none} .chip small{display:none}}
+.print button{padding:8px 12px}
+
+/* ---------- rail ---------- */
+.rail{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;overflow-y:auto;scrollbar-width:thin}
+.card{background:var(--panel);border:1px solid var(--hair);border-radius:6px;padding:10px 14px;display:grid;gap:8px}
+.card h2{
+  margin:0;font:700 11.5px/1 var(--font-display);font-stretch:110%;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+  display:flex;justify-content:space-between;align-items:center
+}
+.card h2 .step{font-family:var(--font-mono);color:var(--accent);letter-spacing:0}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row > *{min-width:0}
+label.field{display:grid;gap:2px;font-size:12.5px;color:var(--muted)}
+label.field .val{font-family:var(--font-mono);color:var(--fg);font-variant-numeric:tabular-nums}
+label.field .lab{display:flex;justify-content:space-between;gap:8px}
+select,input[type=number]{
+  width:100%;background:var(--panel-2);color:var(--fg);border:1px solid var(--hair);border-radius:4px;
+  padding:7px 8px;font:13.5px var(--font-body)
+}
+input[type=range]{width:100%;accent-color:var(--accent);margin:2px 0}
+.check{display:flex;gap:7px;align-items:center;font-size:13px;cursor:pointer}
+.check input{accent-color:var(--accent);width:15px;height:15px;margin:0}
+button,.btn{
+  font:600 13.5px/1 var(--font-body);border-radius:4px;padding:9px 13px;cursor:pointer;border:1px solid var(--hair);
+  background:var(--panel-2);color:var(--fg);display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap
+}
+button.primary,.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:hover,.btn:hover{filter:brightness(1.08)}
+button:focus-visible,.btn:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.5;cursor:not-allowed}
+.grow{flex:1}
+.note{font-size:12px;color:var(--muted);margin:0;line-height:1.4}
+.note code,.mono{font-family:var(--font-mono);font-size:12px}
+.seg{position:relative;display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--hair);border-radius:4px;overflow:hidden}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label{padding:7px;text-align:center;cursor:pointer;font-size:13px;color:var(--muted)}
+.seg input:checked + label{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.seg input:focus-visible + label{outline:2px solid var(--accent);outline-offset:-2px}
+.modelname{font-family:var(--font-mono);font-size:12px;overflow-wrap:anywhere;color:var(--muted)}
+.err{color:var(--warn);font-size:13px;margin:0}
+
+/* tablets and phones: normal scrolling page */
+@media (max-width:960px){
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:none;height:auto;overflow:visible}
+  .stage-box{flex:none;container-type:normal;display:block}
+  .stage{width:100%}
+  .rail{overflow:visible}
+  .print{margin-left:0}
+}
+@media (max-width:700px){.empty{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>Tag Cube <span>AR</span></h1>
+    <p class="sub">Hold a cube of six tag36h11 AprilTags to the webcam and a 3D model rides on it.</p>
+  </header>
+
+  <section class="stage-wrap">
+    <div class="stage-box">
+      <div class="stage" id="stage">
+        <div class="flip layer" id="flip">
+          <video id="video" class="layer" playsinline muted></video>
+          <canvas id="gl" class="layer"></canvas>
+          <canvas id="overlay" class="layer"></canvas>
+        </div>
+        <div class="hud">
+          <span class="pill" id="statePill"><span class="dot"></span><span id="stateText">Preview</span></span>
+          <span class="pill" id="fpsPill" hidden><span id="fpsText">0 fps</span></span>
+          <span class="pill errpill" id="errPill" hidden><span id="errText"></span></span>
+        </div>
+        <div class="empty" id="emptyNote">
+          <b>Get started</b>
+          <ol>
+            <li>Download the cube PDF below, print at 100% and fold it.</li>
+            <li>Start the camera and show the cube.</li>
+            <li>Drop a <span class="mono">.glb</span> file here to replace the sample model.</li>
+          </ol>
+        </div>
+        <div class="preview-tag" id="previewTag">Preview · how the cube should look</div>
+      </div>
+    </div>
+    <div class="bar">
+      <div class="chips" id="chips"></div>
+      <div class="print" title="Tags 0–5 from tag36h11: 0 front, 1 right, 2 back, 3 left, 4 top, 5 bottom. Print on card at actual size, cut the solid lines, fold the dashed ones with the print outside.">
+        <span class="ptitle">Print the cube</span>
+        <div class="seg" role="radiogroup" aria-label="Paper size">
+          <input type="radio" name="paper" id="paperA4" value="a4" checked><label for="paperA4">A4</label>
+          <input type="radio" name="paper" id="paperLetter" value="letter"><label for="paperLetter">US Letter</label>
+        </div>
+        <label class="edgebox" for="edge">Edge <input type="number" id="edge" min="25" max="61" step="1" value="60"> mm <span class="mono" id="edgeMax">max 61</span></label>
+        <button class="primary" id="pdfBtn">Download cube PDF</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="rail">
+    <div class="card">
+      <h2>Camera <span class="step">01</span></h2>
+      <div class="row">
+        <button class="primary grow" id="camBtn">Start camera</button>
+        <label class="check" for="mirrorChk"><input type="checkbox" id="mirrorChk" checked> Mirror</label>
+      </div>
+      <select id="camSelect" aria-label="Camera device"><option value="">Default camera</option></select>
+      <p class="err" id="camErr" hidden></p>
+    </div>
+
+    <div class="card">
+      <h2>Tracking <span class="step">02</span></h2>
+      <label class="field" for="fov" title="If the model slides as you tilt the cube, nudge this until it sits still. Most laptop webcams are 55–70°."><span class="lab">Camera field of view <span class="val" id="fovVal">62°</span></span>
+        <input type="range" id="fov" min="35" max="100" step="1" value="62">
+      </label>
+      <label class="field" for="smooth"><span class="lab">Smoothing <span class="val" id="smoothVal">0.60</span></span>
+        <input type="range" id="smooth" min="0" max="0.95" step="0.05" value="0.6">
+      </label>
+      <select id="procRes" aria-label="Detection resolution">
+        <option value="480">Detect at 480 px (fastest)</option>
+        <option value="640" selected>Detect at 640 px</option>
+        <option value="960">Detect at 960 px (small or far cubes)</option>
+      </select>
+      <div class="row">
+        <label class="check" for="showTags"><input type="checkbox" id="showTags" checked> Outline tags</label>
+        <label class="check" for="showCube"><input type="checkbox" id="showCube"> Cube wireframe</label>
+      </div>
+      <p class="note">Model slides when you tilt the cube? Nudge the field of view until it sits still.</p>
+    </div>
+
+    <div class="card">
+      <h2>Model <span class="step">03</span></h2>
+      <div class="row">
+        <label class="btn primary grow" for="glbInput">Upload .glb</label>
+        <input type="file" id="glbInput" accept=".glb,.gltf,model/gltf-binary" hidden>
+        <button id="resetModel">Sample</button>
+      </div>
+      <div class="modelname" id="modelName">Sample model</div>
+      <div class="seg" role="radiogroup" aria-label="Model placement">
+        <input type="radio" name="anchor" id="anchorTop" value="top" checked><label for="anchorTop">On top</label>
+        <input type="radio" name="anchor" id="anchorCenter" value="center"><label for="anchorCenter">Inside cube</label>
+      </div>
+      <label class="field" for="scale"><span class="lab">Size (× cube edge) <span class="val" id="scaleVal">1.20</span></span>
+        <input type="range" id="scale" min="0.2" max="4" step="0.05" value="1.2">
+      </label>
+      <label class="field" for="spin"><span class="lab">Turn <span class="val" id="spinVal">0°</span></span>
+        <input type="range" id="spin" min="-180" max="180" step="5" value="0">
+      </label>
+      <label class="check" for="occlude"><input type="checkbox" id="occlude" checked> Cube hides what is behind it</label>
+    </div>
+  </aside>
+</div>
+
+<!-- AprilTag / ArUco detector (js-aruco2) and PDF writer -->
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/dictionaries/apriltag_36h11.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// ==POSE==
+/* Cube definition shared by the tracker and the printable net.
+   Cube units: edge = 1, centre at origin, +y = top face.
+   Each face: centre C, U = paper "right", V = paper "up" (as printed on the net), net grid cell. */
+const TAG_FRAC = 0.76;   // black tag square as a fraction of the face edge
+const FACES = [
+  { id:0, name:'Front',  C:[0,0,0.5],  U:[1,0,0],  V:[0,1,0],  col:1, row:1 },
+  { id:1, name:'Right',  C:[0.5,0,0],  U:[0,0,-1], V:[0,1,0],  col:2, row:1 },
+  { id:2, name:'Back',   C:[0,0,-0.5], U:[-1,0,0], V:[0,1,0],  col:3, row:1 },
+  { id:3, name:'Left',   C:[-0.5,0,0], U:[0,0,1],  V:[0,1,0],  col:0, row:1 },
+  { id:4, name:'Top',    C:[0,0.5,0],  U:[1,0,0],  V:[0,0,-1], col:1, row:0 },
+  { id:5, name:'Bottom', C:[0,-0.5,0], U:[1,0,0],  V:[0,0,1],  col:1, row:2 },
+];
+const cross = (a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const dot = (a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const norm = a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];};
+FACES.forEach(f=>{ f.N = cross(f.U,f.V); });
+
+// Tag corners in the order the detector returns them: TL, TR, BR, BL of the tag as printed.
+function tagCorners3D(f){
+  const a = TAG_FRAC/2;
+  const p = (su,sv)=>[0,1,2].map(k=>f.C[k]+su*a*f.U[k]+sv*a*f.V[k]);
+  return [p(-1,1), p(1,1), p(1,-1), p(-1,-1)];
+}
+FACES.forEach(f=>{ f.corners = tagCorners3D(f); });
+
+// 3x3 matrices stored row-major as arrays of 9
+const matMul = (A,B)=>{const C=new Array(9);for(let i=0;i<3;i++)for(let j=0;j<3;j++)C[i*3+j]=A[i*3]*B[j]+A[i*3+1]*B[3+j]+A[i*3+2]*B[6+j];return C;};
+const matVec = (A,v)=>[A[0]*v[0]+A[1]*v[1]+A[2]*v[2], A[3]*v[0]+A[4]*v[1]+A[5]*v[2], A[6]*v[0]+A[7]*v[1]+A[8]*v[2]];
+const transpose = A=>[A[0],A[3],A[6],A[1],A[4],A[7],A[2],A[5],A[8]];
+function rodrigues(w){
+  const th = Math.hypot(w[0],w[1],w[2]);
+  if (th < 1e-12) return [1,-w[2],w[1], w[2],1,-w[0], -w[1],w[0],1];
+  const k=[w[0]/th,w[1]/th,w[2]/th], s=Math.sin(th), c=1-Math.cos(th);
+  const K=[0,-k[2],k[1], k[2],0,-k[0], -k[1],k[0],0];
+  const K2=matMul(K,K);
+  return [0,1,2,3,4,5,6,7,8].map(i=>(i%4===0?1:0)+s*K[i]+c*K2[i]);
+}
+function solveLinear(A,b){ // Gaussian elimination with partial pivoting, A n×n (array of rows)
+  const n=b.length, M=A.map((r,i)=>[...r,b[i]]);
+  for(let c=0;c<n;c++){
+    let p=c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r;
+    if(Math.abs(M[p][c])<1e-14) return null;
+    [M[c],M[p]]=[M[p],M[c]];
+    for(let r=c+1;r<n;r++){const f=M[r][c]/M[c][c]; for(let k=c;k<=n;k++) M[r][k]-=f*M[c][k];}
+  }
+  const x=new Array(n);
+  for(let r=n-1;r>=0;r--){let s=M[r][n]; for(let k=r+1;k<n;k++) s-=M[r][k]*x[k]; x[r]=s/M[r][r];}
+  return x;
+}
+// Homography mapping plane points (x,y) -> image (u,v); 4 correspondences
+function homography(src,dst){
+  const A=[],b=[];
+  for(let i=0;i<4;i++){
+    const [x,y]=src[i],[u,v]=dst[i];
+    A.push([x,y,1,0,0,0,-u*x,-u*y]); b.push(u);
+    A.push([0,0,0,x,y,1,-v*x,-v*y]); b.push(v);
+  }
+  const h=solveLinear(A,b); if(!h) return null;
+  return [...h,1];
+}
+function project(R,t,p,K){
+  const X=matVec(R,p); const x=X[0]+t[0], y=X[1]+t[1], z=X[2]+t[2];
+  return [K.fx*x/z+K.cx, K.fy*y/z+K.cy, z];
+}
+function residuals(R,t,obj,img,K){
+  const r=new Float64Array(obj.length*2);
+  for(let i=0;i<obj.length;i++){const q=project(R,t,obj[i],K); r[2*i]=q[0]-img[i][0]; r[2*i+1]=q[1]-img[i][1]; if(q[2]<=0){r[2*i]=r[2*i+1]=1e4;}}
+  return r;
+}
+const sq = r=>{let s=0;for(const v of r)s+=v*v;return s;};
+// Initial cube pose from one tag via planar homography (OpenCV camera frame: x right, y down, z forward)
+function poseFromTag(face, imgCorners, K){
+  const a=TAG_FRAC/2;
+  const H=homography([[-a,a],[a,a],[a,-a],[-a,-a]], imgCorners); if(!H) return null;
+  // Kinv * H
+  const col=j=>[(H[j]-K.cx*H[6+j])/K.fx, (H[3+j]-K.cy*H[6+j])/K.fy, H[6+j]];
+  let h1=col(0),h2=col(1),h3=col(2);
+  let lam=(Math.hypot(...h1)+Math.hypot(...h2))/2; if(lam<1e-12) return null;
+  if(h3[2]<0) lam=-lam;
+  const r1=norm(h1);
+  let r2=h2.map((v,i)=>v-dot(r1,h2)*r1[i]); r2=norm(r2);
+  const r3=cross(r1,r2);
+  const Rt=[r1[0],r2[0],r3[0], r1[1],r2[1],r3[1], r1[2],r2[2],r3[2]];
+  const tt=h3.map(v=>v/lam);
+  const Mt=[...face.U,...face.V,...face.N];       // rows = U,V,N  (M^T)
+  const R=matMul(Rt,Mt);
+  const RC=matVec(R,face.C);
+  return {R, t:[tt[0]-RC[0],tt[1]-RC[1],tt[2]-RC[2]]};
+}
+// Levenberg–Marquardt over rotation (left-multiplied axis-angle) and translation
+function refinePose(pose,obj,img,K,iters=10){
+  let R=pose.R.slice(), t=pose.t.slice();
+  let r=residuals(R,t,obj,img,K), e=sq(r), lambda=1e-3;
+  const m=r.length;
+  for(let it=0;it<iters;it++){
+    const J=[];
+    for(let k=0;k<6;k++){
+      const eps=k<3?1e-6:1e-6*Math.max(1,Math.abs(t[2]));
+      let R2=R,t2=t;
+      if(k<3){const w=[0,0,0]; w[k]=eps; R2=matMul(rodrigues(w),R);} else {t2=t.slice(); t2[k-3]+=eps;}
+      const r2=residuals(R2,t2,obj,img,K);
+      J.push(Array.from(r2,(v,i)=>(v-r[i])/eps));
+    }
+    const JtJ=[...Array(6)].map(()=>new Array(6).fill(0)), Jtr=new Array(6).fill(0);
+    for(let a=0;a<6;a++){for(let i=0;i<m;i++)Jtr[a]+=J[a][i]*r[i]; for(let b=a;b<6;b++){let s=0;for(let i=0;i<m;i++)s+=J[a][i]*J[b][i]; JtJ[a][b]=JtJ[b][a]=s;}}
+    let improved=false;
+    for(let tries=0;tries<6&&!improved;tries++){
+      const A=JtJ.map((row,i)=>row.map((v,j)=>i===j?v*(1+lambda)+1e-9:v));
+      const d=solveLinear(A,Jtr.map(v=>-v)); if(!d) break;
+      const Rn=matMul(rodrigues([d[0],d[1],d[2]]),R), tn=[t[0]+d[3],t[1]+d[4],t[2]+d[5]];
+      const rn=residuals(Rn,tn,obj,img,K), en=sq(rn);
+      if(en<e){R=Rn;t=tn;r=rn;lambda=Math.max(lambda/10,1e-7);improved=e-en>1e-10*e;e=en;improved=true;}
+      else lambda*=10;
+    }
+    if(!improved) break;
+  }
+  // re-orthonormalise R
+  let c0=norm([R[0],R[3],R[6]]), c1=[R[1],R[4],R[7]];
+  c1=norm(c1.map((v,i)=>v-dot(c0,c1)*c0[i])); const c2=cross(c0,c1);
+  R=[c0[0],c1[0],c2[0], c0[1],c1[1],c2[1], c0[2],c1[2],c2[2]];
+  return {R,t,rms:Math.sqrt(sq(residuals(R,t,obj,img,K))/(obj.length))};
+}
+// Solve the cube pose from all visible tags; tries each tag's homography and the previous pose as seeds.
+function solveCubePose(markers,K,prev){
+  const obj=[],img=[];
+  for(const m of markers){const f=FACES[m.id]; for(let i=0;i<4;i++){obj.push(f.corners[i]); img.push([m.corners[i].x,m.corners[i].y]);}}
+  if(!obj.length) return null;
+  const seeds=[];
+  for(const m of markers){const s=poseFromTag(FACES[m.id],m.corners.map(c=>[c.x,c.y]),K); if(s) seeds.push(s);}
+  if(prev) seeds.push(prev);
+  let best=null;
+  for(const s of seeds){
+    const p=refinePose(s,obj,img,K);
+    if(p.t[2]>0 && (!best||p.rms<best.rms)) best=p;
+  }
+  if(best) best.count=markers.length;
+  return best;
+}
+// Sub-pixel corner refinement: fit a straight line to each outer edge of the black square
+// (strongest gradient along the edge normal, parabolic peak) and intersect neighbouring lines.
+function sampleBilinear(g,w,h,x,y){
+  if(x<0||y<0||x>=w-1||y>=h-1) return -1;
+  const x0=x|0,y0=y|0,fx=x-x0,fy=y-y0,i=y0*w+x0;
+  return (g[i]*(1-fx)+g[i+1]*fx)*(1-fy)+(g[i+w]*(1-fx)+g[i+w+1]*fx)*fy;
+}
+function refineCorners(img,corners){
+  const g=img.data,w=img.width,h=img.height,lines=[];
+  for(let e=0;e<4;e++){
+    const a=corners[e],b=corners[(e+1)%4],dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy);
+    if(L<14) return corners;
+    const nx=-dy/L,ny=dx/L,r=Math.min(5,Math.max(1.5,L*0.045)),step=0.5,nS=Math.min(28,Math.floor(L/2.5)),pts=[];
+    for(let k=0;k<nS;k++){
+      const t=0.12+0.76*k/(nS-1),px=a.x+dx*t,py=a.y+dy*t,vals=[];
+      for(let s=-r;s<=r+1e-9;s+=step){const v=sampleBilinear(g,w,h,px+nx*s,py+ny*s); if(v<0){vals.length=0;break;} vals.push(v);}
+      if(vals.length<7) continue;
+      let best=0,bi=-1;
+      for(let i=1;i<vals.length-1;i++){const gr=Math.abs(vals[i+1]-vals[i-1]); if(gr>best){best=gr;bi=i;}}
+      if(bi<2||bi>vals.length-3||best<16) continue;
+      const g0=Math.abs(vals[bi]-vals[bi-2]),g2=Math.abs(vals[bi+2]-vals[bi]),den=g0-2*best+g2;
+      const off=den<0?Math.max(-0.5,Math.min(0.5,0.5*(g0-g2)/den)):0;
+      const s=-r+(bi+off)*step; pts.push([px+nx*s,py+ny*s]);
+    }
+    if(pts.length<5) return corners;
+    let mx=0,my=0; for(const p of pts){mx+=p[0];my+=p[1];} mx/=pts.length; my/=pts.length;
+    let sxx=0,sxy=0,syy=0; for(const p of pts){const X=p[0]-mx,Y=p[1]-my; sxx+=X*X; sxy+=X*Y; syy+=Y*Y;}
+    const th=0.5*Math.atan2(2*sxy,sxx-syy); lines.push({mx,my,dx:Math.cos(th),dy:Math.sin(th)});
+  }
+  const out=[];
+  for(let i=0;i<4;i++){
+    const l1=lines[(i+3)%4],l2=lines[i],det=l2.dx*l1.dy-l1.dx*l2.dy;
+    if(Math.abs(det)<1e-6) return corners;
+    const bx=l2.mx-l1.mx,by=l2.my-l1.my,t=(l2.dx*by-l2.dy*bx)/det;
+    const p={x:l1.mx+l1.dx*t+0.5,y:l1.my+l1.dy*t+0.5};   // +0.5: pixel centres -> canvas coordinates
+    if(Math.hypot(p.x-corners[i].x,p.y-corners[i].y)>3.5) return corners;
+    out.push(p);
+  }
+  return out;
+}
+// ==/POSE==
+
+let stream=null, running=false;
+function setErr(msg){ const e=document.getElementById('errPill'); document.getElementById('errText').textContent=msg||''; e.hidden=!msg; }
+/* ---------------- DOM ---------------- */
+const $=id=>document.getElementById(id);
+const stage=$('stage'), video=$('video'), glCanvas=$('gl'), overlay=$('overlay');
+const octx=overlay.getContext('2d');
+
+// chips per face
+FACES.forEach(f=>{
+  const c=document.createElement('span'); c.className='chip'; c.id='chip'+f.id; c.title=`Tag ${f.id}: ${f.name} face`;
+  c.innerHTML=`${f.id} <small>${f.name}</small>`; $('chips').appendChild(c);
+});
+
+/* ---------------- detector ---------------- */
+let detector=null, detectorErr=null;
+try{
+  detector=new AR.Detector({dictionaryName:'APRILTAG_36h11', maxHammingDistance:3});
+}catch(e){ detectorErr=e; setErr('Tag detector failed to load. Check your internet connection and reload.'); }
+
+/* ---------------- three.js ---------------- */
+const renderer=new THREE.WebGLRenderer({canvas:glCanvas,antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+const scene=new THREE.Scene();
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(renderer),0.04).texture;
+scene.add(new THREE.HemisphereLight(0xffffff,0x334433,0.6));
+const sun=new THREE.DirectionalLight(0xffffff,1.6); sun.position.set(1,2,1.5); scene.add(sun);
+
+const camera3=new THREE.PerspectiveCamera(40,16/9,0.01,1000); // stays at origin looking down -z
+
+const anchor=new THREE.Group(); anchor.matrixAutoUpdate=false; anchor.visible=false; scene.add(anchor);
+const placement=new THREE.Group(); anchor.add(placement);
+const spinner=new THREE.Group(); placement.add(spinner);
+const modelHolder=new THREE.Group(); spinner.add(modelHolder);
+
+// occluder: writes depth only, so the cube hides what is behind it
+const occluder=new THREE.Mesh(new THREE.BoxGeometry(0.999,0.999,0.999),new THREE.MeshBasicMaterial({colorWrite:false}));
+occluder.renderOrder=-1; anchor.add(occluder);
+// wireframe
+const wire=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1,1,1)),new THREE.LineBasicMaterial({color:0xf2c94c}));
+wire.visible=false; anchor.add(wire);
+const axes=new THREE.AxesHelper(0.8); axes.visible=false; anchor.add(axes);
+
+// textured preview cube built from the same face table that the tracker and PDF use
+function tagCanvas(f,px=256){
+  const c=document.createElement('canvas'); c.width=c.height=px; const g=c.getContext('2d');
+  g.fillStyle='#fff'; g.fillRect(0,0,px,px);
+  const T=px*TAG_FRAC, o=(px-T)/2, cell=T/8, code=detector?detector.dictionary.codeList[f.id]:null;
+  g.fillStyle='#000'; g.fillRect(o,o,T,T);
+  if(code){ g.fillStyle='#fff'; for(let y=0;y<6;y++)for(let x=0;x<6;x++) if(code[y*6+x]==='1') g.fillRect(o+(x+1)*cell,o+(y+1)*cell,cell+.5,cell+.5); }
+  g.fillStyle='#8a9a90'; g.font=`600 ${px*0.05}px sans-serif`; g.fillText(`${f.id} ${f.name.toUpperCase()}`,px*0.025,px*0.975);
+  return c;
+}
+const previewCube=new THREE.Group();
+FACES.forEach(f=>{
+  const tex=new THREE.CanvasTexture(tagCanvas(f)); tex.colorSpace=THREE.SRGBColorSpace;
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshStandardMaterial({map:tex,roughness:.9}));
+  const M=new THREE.Matrix4().makeBasis(new THREE.Vector3(...f.U),new THREE.Vector3(...f.V),new THREE.Vector3(...f.N));
+  M.setPosition(...f.C); m.applyMatrix4(M); previewCube.add(m);
+});
+anchor.add(previewCube);
+
+/* ---------------- model ---------------- */
+let mixer=null; const clock=new THREE.Clock();
+const draco=new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/gltf/');
+const loader=new GLTFLoader().setDRACOLoader(draco).setMeshoptDecoder(MeshoptDecoder);
+
+function fitModel(obj){
+  // normalise: largest dimension = 1, footprint centred, base at y=0
+  const box=new THREE.Box3().setFromObject(obj), size=box.getSize(new THREE.Vector3());
+  const s=1/Math.max(size.x,size.y,size.z,1e-6);
+  const wrap=new THREE.Group(); wrap.add(obj);
+  obj.position.set(-(box.min.x+box.max.x)/2,-box.min.y,-(box.min.z+box.max.z)/2);
+  wrap.scale.setScalar(s); wrap.userData.height=size.y*s;
+  return wrap;
+}
+function setModel(obj,name,clips){
+  modelHolder.clear(); if(mixer){mixer.stopAllAction();mixer=null;}
+  const fitted=fitModel(obj); modelHolder.add(fitted); modelHolder.userData.height=fitted.userData.height;
+  if(clips&&clips.length){mixer=new THREE.AnimationMixer(obj); clips.forEach(c=>mixer.clipAction(c).play());}
+  $('modelName').textContent=name; applyPlacement();
+}
+function sampleModel(){
+  const g=new THREE.Group();
+  const gold=new THREE.MeshStandardMaterial({color:0xf2c94c,metalness:.6,roughness:.3});
+  const teal=new THREE.MeshStandardMaterial({color:0x2fb38a,metalness:.1,roughness:.5});
+  const knot=new THREE.Mesh(new THREE.TorusKnotGeometry(0.28,0.09,160,24),gold); knot.position.y=0.62; g.add(knot);
+  const plinth=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.38,0.18,48),teal); plinth.position.y=0.09; g.add(plinth);
+  const post=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.2,24),teal); post.position.y=0.25; g.add(post);
+  g.userData.spin=knot; return g;
+}
+setModel(sampleModel(),'Sample model');
+
+function loadGLB(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    loader.parse(reader.result,'',gltf=>{
+      setModel(gltf.scene,file.name,gltf.animations);
+      setErr('');
+    },err=>{ setErr(`Could not read ${file.name}: ${err.message||err}`); });
+  };
+  reader.readAsArrayBuffer(file);
+}
+$('glbInput').addEventListener('change',e=>{const f=e.target.files[0]; if(f) loadGLB(f); e.target.value='';});
+$('resetModel').addEventListener('click',()=>setModel(sampleModel(),'Sample model'));
+['dragenter','dragover'].forEach(ev=>stage.addEventListener(ev,e=>{e.preventDefault();stage.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>stage.addEventListener(ev,e=>{e.preventDefault();stage.classList.remove('drag');}));
+stage.addEventListener('drop',e=>{const f=[...e.dataTransfer.files].find(f=>/\.(glb|gltf)$/i.test(f.name)); if(f) loadGLB(f); else setErr('That file is not a .glb model.');});
+
+/* ---------------- placement controls ---------------- */
+function applyPlacement(){
+  const anchorMode=document.querySelector('input[name=anchor]:checked').value;
+  const s=+$('scale').value; modelHolder.scale.setScalar(s);
+  const h=(modelHolder.userData.height||1)*s;
+  placement.position.y = anchorMode==='top' ? 0.5 : -h/2;
+  spinner.rotation.y=THREE.MathUtils.degToRad(+$('spin').value);
+  occluder.visible=$('occlude').checked && running;
+  $('scaleVal').textContent=s.toFixed(2); $('spinVal').textContent=$('spin').value+'°';
+}
+['scale','spin','occlude'].forEach(id=>$(id).addEventListener('input',applyPlacement));
+document.querySelectorAll('input[name=anchor]').forEach(r=>r.addEventListener('change',applyPlacement));
+$('showCube').addEventListener('change',()=>{wire.visible=axes.visible=$('showCube').checked;});
+$('fov').addEventListener('input',()=>{$('fovVal').textContent=$('fov').value+'°'; updateIntrinsics();});
+$('smooth').addEventListener('input',()=>$('smoothVal').textContent=(+$('smooth').value).toFixed(2));
+$('procRes').addEventListener('change',()=>updateIntrinsics());
+$('mirrorChk').addEventListener('change',()=>{ if(running) stage.classList.toggle('mirror',$('mirrorChk').checked); });
+
+/* ---------------- camera ---------------- */
+const proc=document.createElement('canvas'), pctx=proc.getContext('2d',{willReadFrequently:true});
+let K={fx:500,fy:500,cx:320,cy:180};
+
+function updateIntrinsics(){
+  const vw=video.videoWidth||1280, vh=video.videoHeight||720;
+  const pw=+$('procRes').value, ph=Math.round(pw*vh/vw);
+  proc.width=pw; proc.height=ph; overlay.width=pw; overlay.height=ph;
+  const hfov=THREE.MathUtils.degToRad(+$('fov').value);
+  const f=(pw/2)/Math.tan(hfov/2);
+  K={fx:f,fy:f,cx:pw/2,cy:ph/2};
+  camera3.fov=THREE.MathUtils.radToDeg(2*Math.atan((ph/2)/f));
+  camera3.aspect=pw/ph; camera3.updateProjectionMatrix();
+  stage.style.setProperty('--ar',`${vw}/${vh}`);
+  prevPose=null;
+}
+
+async function listCameras(){
+  try{
+    const devs=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+    const sel=$('camSelect'), cur=sel.value;
+    if(!devs.length) return;
+    sel.innerHTML=''; devs.forEach((d,i)=>{const o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||`Camera ${i+1}`;sel.appendChild(o);});
+    if(stream){const id=stream.getVideoTracks()[0].getSettings().deviceId; if(id) sel.value=id;} else if(cur) sel.value=cur;
+  }catch(e){}
+}
+async function startCamera(deviceId){
+  $('camErr').hidden=true;
+  if(!navigator.mediaDevices?.getUserMedia){ showCamErr('This browser cannot open a camera here. Open the file in Chrome, Edge, Firefox or Safari, served from https:// or opened directly from disk.'); return; }
+  stopCamera();
+  const v={width:{ideal:1280},height:{ideal:720}};
+  if(deviceId) v.deviceId={exact:deviceId}; else v.facingMode='user';
+  try{ stream=await navigator.mediaDevices.getUserMedia({video:v,audio:false}); }
+  catch(e){ showCamErr(e.name==='NotAllowedError'?'Camera access was blocked. Allow the camera for this page in the browser\'s address bar, then press Start camera again.':`Could not open the camera (${e.name}).`); return; }
+  video.srcObject=stream; await video.play();
+  const fm=stream.getVideoTracks()[0].getSettings().facingMode;
+  $('mirrorChk').checked = fm!=='environment'; stage.classList.toggle('mirror',$('mirrorChk').checked);
+  running=true; updateIntrinsics(); listCameras();
+  $('camBtn').textContent='Stop camera'; $('emptyNote').hidden=true; $('previewTag').hidden=true;
+  previewCube.visible=false; anchor.visible=false; applyPlacement(); $('fpsPill').hidden=false;
+}
+function stopCamera(){
+  if(stream){stream.getTracks().forEach(t=>t.stop()); stream=null;}
+  running=false; video.srcObject=null; octx.clearRect(0,0,overlay.width,overlay.height);
+  $('camBtn').textContent='Start camera'; $('emptyNote').hidden=false; $('previewTag').hidden=false;
+  previewCube.visible=true; $('fpsPill').hidden=true; setState('Preview',''); applyPlacement();
+  stage.classList.remove('mirror'); camera3.fov=40; camera3.aspect=16/9; camera3.updateProjectionMatrix(); stage.style.setProperty('--ar','16/9');
+}
+function showCamErr(msg){const e=$('camErr'); e.textContent=msg; e.hidden=false;}
+$('camBtn').addEventListener('click',()=>running?stopCamera():startCamera($('camSelect').value));
+$('camSelect').addEventListener('change',()=>{ if(running) startCamera($('camSelect').value); });
+listCameras();
+
+function setState(text,cls){$('stateText').textContent=text; $('statePill').className='pill '+cls;}
+
+/* ---------------- tracking loop ---------------- */
+let prevPose=null, lastSeen=0, lastVideoTime=-1, frames=0, fpsT=performance.now();
+/* Smoothing, two stages:
+   1) One Euro filter on each measured pose: strong smoothing when the cube is still (kills jitter),
+      cutoff rises with speed so fast moves are not laggy.
+   2) Every render frame the shown pose eases toward the filtered one, so motion stays fluid at the
+      display rate (often 60 Hz) even though the camera delivers ~30 frames a second. */
+const euro={valid:false,pos:new THREE.Vector3(),quat:new THREE.Quaternion(),vPos:0,vRot:0,t:0};
+const shown={valid:false,pos:new THREE.Vector3(),quat:new THREE.Quaternion()};
+const alphaFor=(dt,cutoff)=>1/(1+1/(2*Math.PI*cutoff*dt));
+function euroUpdate(p,q,now){
+  const s=+$('smooth').value;                 // 0 = raw, 0.95 = very smooth
+  if(!euro.valid||s===0){euro.pos.copy(p);euro.quat.copy(q);euro.vPos=euro.vRot=0;euro.t=now;euro.valid=true;return;}
+  const dt=Math.min(0.2,Math.max(0.005,(now-euro.t)/1000)); euro.t=now;
+  const minCut=0.15+8*Math.pow(1-s,2);        // Hz while still
+  const depth=Math.max(0.5,-p.z);
+  const speedP=p.distanceTo(euro.pos)/dt/depth, speedR=euro.quat.angleTo(q)/dt;
+  const ad=alphaFor(dt,1.2);
+  euro.vPos+=ad*(speedP-euro.vPos); euro.vRot+=ad*(speedR-euro.vRot);
+  euro.pos.lerp(p,alphaFor(dt,minCut+5*euro.vPos));
+  euro.quat.slerp(q,alphaFor(dt,minCut+1.6*euro.vRot));
+}
+function easeShown(dt){
+  if(!euro.valid) return;
+  if(!shown.valid){shown.pos.copy(euro.pos);shown.quat.copy(euro.quat);shown.valid=true;}
+  const k=1-Math.exp(-dt/0.03);
+  shown.pos.lerp(euro.pos,k); shown.quat.slerp(euro.quat,k);
+  anchor.matrix.compose(shown.pos,shown.quat,new THREE.Vector3(1,1,1));
+}
+const CV2GL=new THREE.Matrix4().makeScale(1,-1,-1);
+const tmpM=new THREE.Matrix4(), tmpP=new THREE.Vector3(), tmpQ=new THREE.Quaternion(), tmpS=new THREE.Vector3();
+
+function trackFrame(){
+  if(!detector||video.readyState<2||video.currentTime===lastVideoTime) return;
+  lastVideoTime=video.currentTime; frames++;
+  pctx.drawImage(video,0,0,proc.width,proc.height);
+  const img=pctx.getImageData(0,0,proc.width,proc.height);
+  let markers=[];
+  try{ markers=detector.detectImage(proc.width,proc.height,img.data).filter(m=>m.id>=0&&m.id<6); }catch(e){}
+  if(markers.length) markers.forEach(m=>{ m.corners=refineCorners(detector.grey,m.corners); });
+  // keep the best detection per id
+  const byId={}; markers.forEach(m=>{if(!byId[m.id]||m.hammingDistance<byId[m.id].hammingDistance) byId[m.id]=m;});
+  markers=Object.values(byId);
+  FACES.forEach(f=>$('chip'+f.id).classList.toggle('on',!!byId[f.id]));
+
+  octx.clearRect(0,0,overlay.width,overlay.height);
+  if($('showTags').checked){
+    octx.lineWidth=2; octx.font='600 14px "JetBrains Mono",monospace';
+    markers.forEach(m=>{
+      octx.strokeStyle='#f2c94c'; octx.beginPath(); m.corners.forEach((c,i)=>i?octx.lineTo(c.x,c.y):octx.moveTo(c.x,c.y)); octx.closePath(); octx.stroke();
+      octx.fillStyle='#7fe0a8'; octx.fillRect(m.corners[0].x-3,m.corners[0].y-3,6,6);
+      const cx=m.corners.reduce((s,c)=>s+c.x,0)/4, cy=m.corners.reduce((s,c)=>s+c.y,0)/4;
+      octx.save(); octx.translate(cx,cy); if(stage.classList.contains('mirror')) octx.scale(-1,1);
+      octx.fillStyle='#f2c94c'; octx.textAlign='center'; octx.fillText(String(m.id),0,5); octx.restore();
+    });
+  }
+
+  const now=performance.now();
+  const pose=markers.length?solveCubePose(markers,K,(now-lastSeen<250)?prevPose:null):null;
+  const maxErr=Math.max(3,proc.width/160);
+  if(pose && pose.rms<maxErr){
+    prevPose=pose; lastSeen=now;
+    const R=pose.R,t=pose.t;
+    tmpM.set(R[0],R[1],R[2],t[0], R[3],R[4],R[5],t[1], R[6],R[7],R[8],t[2], 0,0,0,1).premultiply(CV2GL);
+    tmpM.decompose(tmpP,tmpQ,tmpS);
+    if(!anchor.visible){euro.valid=false;shown.valid=false;}   // re-acquired: snap, don't glide in
+    euroUpdate(tmpP,tmpQ,now);
+    anchor.visible=true;
+    setState(`Tracking · ${pose.count} tag${pose.count>1?'s':''}`,'live');
+  }else if(now-lastSeen>400){
+    anchor.visible=false; euro.valid=false; shown.valid=false; prevPose=null;
+    setState(markers.length?'Tags seen, pose unclear':'Looking for the cube','lost');
+  }
+  if(now-fpsT>1000){$('fpsText').textContent=`${Math.round(frames*1000/(now-fpsT))} fps`; frames=0; fpsT=now;}
+}
+
+/* ---------------- preview animation (no camera) ---------------- */
+function previewFrame(t){
+  const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(0.45+0.12*Math.sin(t*0.0004),t*0.0005,0));
+  anchor.matrix.compose(new THREE.Vector3(0,-0.45,-4.2),q,new THREE.Vector3(1,1,1));
+  anchor.visible=true;
+}
+
+/* ---------------- render ---------------- */
+function resize(){
+  const r=stage.getBoundingClientRect(); renderer.setSize(r.width,r.height,false);
+  if(!running){camera3.aspect=r.width/r.height; camera3.updateProjectionMatrix();}
+}
+new ResizeObserver(resize).observe(stage); resize();
+
+function loop(t){
+  const dt=clock.getDelta();
+  if(running){ trackFrame(); if(anchor.visible) easeShown(dt); } else previewFrame(t);
+  if(mixer) mixer.update(dt);
+  modelHolder.traverse(o=>{if(o.userData.spin) o.userData.spin.rotation.y+=dt*0.8;});
+  renderer.render(scene,camera3);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ---------------- printable net (PDF) ---------------- */
+const PAPER={a4:{w:297,h:210,label:'A4'}, letter:{w:279.4,h:215.9,label:'US Letter'}}; // landscape, mm
+const MARGIN=7, HEADER=12, TAB=0.16;
+function maxEdge(p){ const P=PAPER[p]; return Math.floor(Math.min((P.w-2*MARGIN)/(4+TAB),(P.h-2*MARGIN-HEADER-2)/3)); }
+function syncEdge(){
+  const p=document.querySelector('input[name=paper]:checked').value, mx=maxEdge(p);
+  $('edge').max=mx; $('edgeMax').textContent=`max ${mx}`;
+  if(+$('edge').value>mx) $('edge').value=mx;
+}
+document.querySelectorAll('input[name=paper]').forEach(r=>r.addEventListener('change',syncEdge)); syncEdge();
+
+function makePDF(paperKey,S){
+  const P=PAPER[paperKey];
+  const doc=new jspdf.jsPDF({orientation:'landscape',unit:'mm',format:paperKey==='a4'?'a4':'letter'});
+  const d=S*TAB;
+  const W=4*S+d, H=3*S;
+  const x0=(P.w-W)/2, y0=MARGIN+HEADER+Math.max(0,((P.h-2*MARGIN-HEADER)-H)/2);
+  const T=S*TAG_FRAC, cell=T/8;
+  const faceXY=f=>[x0+f.col*S, y0+f.row*S];
+  const grid={}; FACES.forEach(f=>grid[f.col+','+f.row]=f);
+
+  // header
+  doc.setTextColor(20); doc.setFont('helvetica','bold'); doc.setFontSize(13);
+  doc.text('AprilTag cube  ·  tag36h11, IDs 0–5',MARGIN,MARGIN+4);
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(70);
+  doc.text(`Cube edge ${S} mm  ·  tag (black square) ${T.toFixed(1)} mm  ·  ${P.label}. Print at 100% / "Actual size", ideally on 160–220 gsm card.`,MARGIN,MARGIN+8);
+  doc.text('Cut solid lines  ·  score and fold dashed lines away from you (print outside)  ·  glue tabs inside  ·  keep tags flat and borders clean.',MARGIN,MARGIN+11.5);
+  // scale check bar
+  const bx=P.w-MARGIN-50, by=MARGIN+1;
+  doc.setDrawColor(20); doc.setLineWidth(0.3); doc.setLineDashPattern([],0);
+  doc.line(bx,by,bx+50,by); for(let i=0;i<=50;i+=10) doc.line(bx+i,by,bx+i,by+(i%50?1.5:2.5));
+  doc.setFontSize(7); doc.text('50 mm check',bx+25,by+6,{align:'center'});
+
+  // faces
+  FACES.forEach(f=>{
+    const [fx,fy]=faceXY(f), ox=fx+(S-T)/2, oy=fy+(S-T)/2, code=detector.dictionary.codeList[f.id], e=0.03;
+    doc.setFillColor(0,0,0); doc.rect(ox,oy,T,T,'F');
+    doc.setFillColor(255,255,255);
+    for(let y=0;y<6;y++){ let x=0; while(x<6){ if(code[y*6+x]==='1'){ let x2=x; while(x2<6&&code[y*6+x2]==='1') x2++;
+      doc.rect(ox+(x+1)*cell-e,oy+(y+1)*cell-e,(x2-x)*cell+2*e,cell+2*e,'F'); x=x2; } else x++; } }
+    doc.setTextColor(170); doc.setFontSize(Math.max(4.5,S*0.085));
+    doc.text(`${f.id} · ${f.name.toUpperCase()}`,fx+1.4,fy+S-1.4);
+  });
+
+  // edges: shared = fold, tab = fold + tab outline, else cut
+  const TABS={ '2:right':1,'2:top':1,'2:bottom':1,'4:left':1,'4:right':1,'5:left':1,'5:right':1 };
+  const cut=(x1,y1,x2,y2)=>{doc.setLineDashPattern([],0);doc.setDrawColor(30);doc.setLineWidth(0.3);doc.line(x1,y1,x2,y2);};
+  const fold=(x1,y1,x2,y2)=>{doc.setLineDashPattern([1.6,1.2],0);doc.setDrawColor(150);doc.setLineWidth(0.25);doc.line(x1,y1,x2,y2);};
+  FACES.forEach(f=>{
+    const [fx,fy]=faceXY(f);
+    const edges={
+      top:   {p:[fx,fy],q:[fx+S,fy],n:[0,-1],nb:[f.col,f.row-1]},
+      bottom:{p:[fx,fy+S],q:[fx+S,fy+S],n:[0,1],nb:[f.col,f.row+1]},
+      left:  {p:[fx,fy],q:[fx,fy+S],n:[-1,0],nb:[f.col-1,f.row]},
+      right: {p:[fx+S,fy],q:[fx+S,fy+S],n:[1,0],nb:[f.col+1,f.row]},
+    };
+    for(const [side,E] of Object.entries(edges)){
+      const shared=grid[E.nb[0]+','+E.nb[1]];
+      if(shared){ fold(...E.p,...E.q); continue; }
+      if(TABS[f.id+':'+side]){
+        fold(...E.p,...E.q);
+        const ex=(E.q[0]-E.p[0])/S, ey=(E.q[1]-E.p[1])/S, ins=d*0.9;
+        const a=[E.p[0]+E.n[0]*d+ex*ins, E.p[1]+E.n[1]*d+ey*ins], b=[E.q[0]+E.n[0]*d-ex*ins, E.q[1]+E.n[1]*d-ey*ins];
+        cut(...E.p,...a); cut(...a,...b); cut(...b,...E.q);
+        doc.setTextColor(170); doc.setFontSize(Math.max(4.5,Math.min(8,d*0.8)));
+        const mx=(a[0]+b[0])/2-E.n[0]*d*0.45, my=(a[1]+b[1])/2-E.n[1]*d*0.45;
+        const ang= E.n[0]!==0 ? 90 : 0;
+        doc.text('glue',mx,my,{align:'center',baseline:'middle',angle:ang});
+      } else cut(...E.p,...E.q);
+    }
+  });
+  doc.setLineDashPattern([],0);
+  return doc;
+}
+$('pdfBtn').addEventListener('click',()=>{
+  if(!detector||!window.jspdf){setErr('PDF tools did not load. Check your internet connection and reload.');return;}
+  const p=document.querySelector('input[name=paper]:checked').value;
+  syncEdge(); const S=Math.max(25,Math.min(+$('edge').value||60,maxEdge(p)));
+  makePDF(p,S).save(`apriltag-cube-${p}-${S}mm.pdf`);
+});
+window.__tagcube={makePDF,FACES,solveCubePose,TAG_FRAC};
+</script>
+</body>
+</html>
