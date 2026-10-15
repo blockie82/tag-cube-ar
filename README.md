@@ -15,7 +15,7 @@ Everything runs in your browser. The camera picture and your models are never up
 
 
 
-
+ 
 **2. The printable cube.** Cut the solid lines, fold the dashed ones and glue the tabs.
 
 <img width="2000" height="1414" alt="156d4845-5e53-41c9-ace4-743998fc508b" src="https://github.com/user-attachments/assets/c623d86a-20c9-4401-ac9f-20e4b5e7d04e" />
